@@ -3,6 +3,8 @@
 #include "core/BTreeGenericIterator.hpp"
 // -------------------------------------------------------------------------------------
 #include "gflags/gflags.h"
+#include "leanstore/concurrency/Mean.hpp"
+#include "leanstore/concurrency/Task.hpp"
 #include "leanstore/storage/btree/core/BTreeInterface.hpp"
 // -------------------------------------------------------------------------------------
 #include <signal.h>
@@ -26,6 +28,10 @@ OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)
       {
          HybridPageGuard<BTreeNode> leaf;
          findLeafCanJump(leaf, key, key_length);
+         // Direct read/write contention signal: the leaf guard had to fall back because the
+         // leaf was exclusively latched by a concurrent writer.
+         if (leaf.hasFacedContention())
+            mean::task::this_task().leaf_contention++;
          // -------------------------------------------------------------------------------------
          DEBUG_BLOCK()
          {
@@ -54,6 +60,7 @@ OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)
       {
          BACKOFF_STRATEGIES()
          WorkerCounters::myCounters().dt_restarts_read[dt_id]++;
+         mean::task::this_task().restart_count++;  // per-op re-traversal count (profiling)
       }
    }
    return OP_RESULT::UNREACHABLE;

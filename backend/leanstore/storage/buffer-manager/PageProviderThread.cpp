@@ -622,6 +622,7 @@ int BufferManager::pageProviderPhase2(CoolingPartition& partition, const u64 pag
                               written_bf.header.lastWrittenGSN = written_lsn;
                               written_bf.header.isWB = false;
                               PPCounters::myCounters().flushed_pages_counter++;
+                              PPCounters::total_written_pages.fetch_add(1, std::memory_order_relaxed);
                               // -------------------------------------------------------------------------------------
                               guard.unlock();
                               jumpmu_break;

@@ -41,6 +41,9 @@ struct PPCounters {
    atomic<u64> outstandinig_read = 0;
    atomic<u64> outstandinig_write = 0;
    // -------------------------------------------------------------------------------------
+   // Process-wide running totals, never reset (the per-thread counters above are zeroed
+   // by every profiling read). Pages written back by the provider / read in from SSD.
+   static std::atomic<u64> total_written_pages, total_read_pages;
    static tbb::enumerable_thread_specific<PPCounters> pp_counters;
    static tbb::enumerable_thread_specific<PPCounters>::reference myCounters() { return pp_counters.local(); }
 };

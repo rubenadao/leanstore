@@ -23,7 +23,7 @@ double ZipfGenerator::zeta(u64 n, double theta)
 {
    double ans = 0;
    for (u64 i = 1; i <= n; i++)
-      ans += std::pow(1.0 / n, theta);
+      ans += std::pow(1.0 / i, theta);
    return ans;
 }
 // -------------------------------------------------------------------------------------

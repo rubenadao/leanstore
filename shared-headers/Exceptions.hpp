@@ -55,17 +55,19 @@ inline void null_check(bool e, std::string msg = "")
 }
 // -------------------------------------------------------------------------------------
 #ifdef DEBUG
-inline void ensure(bool e, std::string msg = "")
+// file/line default to the caller's (GCC/Clang builtins), so a failure names the ensure() that fired.
+inline void ensure(bool e, std::string msg = "", const char* file = __builtin_FILE(), int line = __builtin_LINE())
 {
    if (__builtin_expect(!(e), 0)) {
-      throw leanstore::ex::EnsureFailed(std::string(__func__) + " in " + std::string(__FILE__) + "@" + std::to_string(__LINE__) + ": " +  msg);
+      throw leanstore::ex::EnsureFailed(std::string("ensure in ") + file + "@" + std::to_string(line) + ": " + msg);
    }
 }
 #else
-inline void ensure(bool e, std::string msg = "")
+// file/line default to the caller's (GCC/Clang builtins), so a failure names the ensure() that fired.
+inline void ensure(bool e, std::string msg = "", const char* file = __builtin_FILE(), int line = __builtin_LINE())
 {
    if (__builtin_expect(!(e), 0)) {
-      throw leanstore::ex::EnsureFailed(std::string(__func__) + " in " + std::string(__FILE__) + "@" + std::to_string(__LINE__) + ": " +  msg);
+      throw leanstore::ex::EnsureFailed(std::string("ensure in ") + file + "@" + std::to_string(line) + ": " + msg);
    }
 }
 //#define ensure(e)                                                                                                                               //

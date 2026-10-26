@@ -32,6 +32,10 @@ class LeanStore
    // -------------------------------------------------------------------------------------
    atomic<u64> bg_threads_counter = 0;
    atomic<bool> bg_threads_keep_running = true;
+   // Profiling can be started/stopped per workload so each workload writes its own
+   // per-second CSVs (with csv_truncate). Separate from the global bg lifecycle.
+   atomic<u64> profiling_threads_counter = 0;
+   atomic<bool> profiling_keep_running = true;
    profiling::ConfigsTable configs_table;
    u64 config_hash = 0;
    GlobalStats global_stats;
@@ -58,6 +62,7 @@ class LeanStore
    //cr::CRManager& getCRManager() { return *cr_manager; }
    // -------------------------------------------------------------------------------------
    void startProfilingThread();
+   void stopProfilingThread();
    void persist();
    void restore();
    // -------------------------------------------------------------------------------------

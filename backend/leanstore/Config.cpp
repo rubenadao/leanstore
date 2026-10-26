@@ -56,6 +56,7 @@ DEFINE_uint64(y, 100, "");
 DEFINE_double(d, 0.0, "");
 // -------------------------------------------------------------------------------------
 DEFINE_bool(bulk_insert, false, "");
+DEFINE_bool(append_split, false, "Split leaves at the insertion point (left keeps the keys below the new key) instead of the middle; fills pages under ascending inserts");
 // -------------------------------------------------------------------------------------
 DEFINE_int64(trace_dt_id, -1, "Print a stack trace for page reads for this DT ID");
 DEFINE_int64(trace_trigger_probability, 100, "");

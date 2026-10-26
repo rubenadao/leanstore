@@ -35,7 +35,7 @@ void BTreeGeneric::create(DTID dtid, BufferFrame* meta_bf)
    meta_page->upper = root_write_guard.bf();  // HACK: use upper of meta node as a swip to the storage root
 }
 // -------------------------------------------------------------------------------------
-void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
+void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos, const u8* insert_key, u16 insert_key_length)
 {
    cr::Worker::my().walEnsureEnoughSpace(PAGE_SIZE * 1);
    ParentSwipHandler parent_handler;
@@ -46,7 +46,41 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
       return;
    // -------------------------------------------------------------------------------------
    BTreeNode::SeparatorInfo sep_info;
-   if (favored_split_pos < 0 || favored_split_pos >= c_guard->count - 1) {
+   // --append_split: split a leaf where the pending insert lands so ascending insert streams
+   // leave full pages behind (a middle split leaves them half full forever).
+   //  - Insert at the end: the left keeps every existing key; the new key starts the right.
+   //  - Keys follow the insert point (in a parallel load, the next range's first key y): the
+   //    left keeps the keys below the insert point and the separator is y's predecessor, so
+   //    this stream's later inserts (all < y) keep filling the left page. Only for equal-length
+   //    keys, where "predecessor" bounds every smaller key; otherwise the middle split is used.
+   // Position and keys are read under the optimistic guard; the exclusive upgrade validates them.
+   bool sep_chosen = false;
+   std::vector<u8> sep_override;  // separator bytes when it is not a key stored in the node
+   if (FLAGS_append_split && insert_key && favored_split_pos < 0 && c_guard->is_leaf) {
+      bool is_equal = false;
+      const s16 pos = c_guard->lowerBound(insert_key, insert_key_length, &is_equal);
+      if (!is_equal && pos == c_guard->count) {
+         sep_info = BTreeNode::SeparatorInfo{c_guard->getFullKeyLen(pos - 1), static_cast<u16>(pos - 1), false};
+         sep_chosen = true;
+      } else if (!is_equal && pos > 0 && c_guard->getFullKeyLen(pos) == insert_key_length &&
+                 c_guard->getFullKeyLen(pos - 1) == insert_key_length) {
+         sep_override.resize(insert_key_length);
+         c_guard->getSep(sep_override.data(), BTreeNode::SeparatorInfo{insert_key_length, static_cast<u16>(pos), false});
+         s32 i = static_cast<s32>(sep_override.size()) - 1;  // big-endian decrement: y - 1
+         while (i >= 0 && sep_override[i] == 0)
+            sep_override[i--] = 0xFF;
+         if (i >= 0) {
+            sep_override[i]--;
+            sep_info = BTreeNode::SeparatorInfo{insert_key_length, static_cast<u16>(pos - 1), false};
+            sep_chosen = true;
+         } else {
+            sep_override.clear();  // y is all zero bytes: nothing below it
+         }
+      }
+   }
+   if (sep_chosen) {
+      // chosen above
+   } else if (favored_split_pos < 0 || favored_split_pos >= c_guard->count - 1) {
       if (FLAGS_bulk_insert) {
          favored_split_pos = c_guard->count - 2;
          sep_info = BTreeNode::SeparatorInfo{c_guard->getFullKeyLen(favored_split_pos), static_cast<u16>(favored_split_pos), false};
@@ -78,7 +112,7 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          p_x_guard->upper = new_root.bf();
          // -------------------------------------------------------------------------------------
          new_left_node.init(c_x_guard->is_leaf);
-         c_x_guard->getSep(sep_key, sep_info);
+         if (!sep_override.empty()) { memcpy(sep_key, sep_override.data(), sep_override.size()); } else { c_x_guard->getSep(sep_key, sep_info); }
          // -------------------------------------------------------------------------------------
          c_x_guard->split(new_root, new_left_node, sep_info.slot, sep_key, sep_info.length);
       };
@@ -136,7 +170,7 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          // -------------------------------------------------------------------------------------
          auto exec = [&]() {
             new_left_node.init(c_x_guard->is_leaf);
-            c_x_guard->getSep(sep_key, sep_info);
+            if (!sep_override.empty()) { memcpy(sep_key, sep_override.data(), sep_override.size()); } else { c_x_guard->getSep(sep_key, sep_info); }
             c_x_guard->split(p_x_guard, new_left_node, sep_info.slot, sep_key, sep_info.length);
          };
          // -------------------------------------------------------------------------------------

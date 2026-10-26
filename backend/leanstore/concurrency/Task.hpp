@@ -54,6 +54,18 @@ class Task
    ~Task();
    void* userContext;
    // -------------------------------------------------------------------------------------
+   // Per-task (coroutine-local) profiling counters for a single DB operation. They live on
+   // the Task so they stay correct across worker-thread migration at yield points (unlike a
+   // thread-local). io_count = page reads this op incurred; io_wait_ns = wall-clock ns this
+   // op spent blocked waiting for those reads. The ycsb frontend resets them before each op.
+   unsigned long io_count = 0;
+   unsigned long io_wait_ns = 0;
+   // restart_count = optimistic-latch re-traversals (jumpmu restarts) this op incurred;
+   // leaf_contention = times the leaf guard had to fall back because the leaf was
+   // exclusively latched (direct read/write contention on the leaf). ycsb resets per op.
+   unsigned long restart_count = 0;
+   unsigned long leaf_contention = 0;
+   // -------------------------------------------------------------------------------------
    long dbg = 0;
    long dbgAddr = 0;
    // -------------------------------------------------------------------------------------

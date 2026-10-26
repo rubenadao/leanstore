@@ -17,6 +17,7 @@
 #include "leanstore/utils/RandomGenerator.hpp"
 // -------------------------------------------------------------------------------------
 #include "leanstore/concurrency/Mean.hpp"
+#include "leanstore/concurrency/Task.hpp"
 // -------------------------------------------------------------------------------------
 #include <gflags/gflags.h>
 // -------------------------------------------------------------------------------------
@@ -347,6 +348,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
       assert(!bf.header.isWB);
       bf.header.lastWrittenGSN = bf.page.GSN;
       bf.header.state = BufferFrame::STATE::LOADED;
+      PPCounters::total_read_pages.fetch_add(1, std::memory_order_relaxed);
       bf.header.pid = pid;
       io_frame.bf =(BufferFrame*)0x1111;
       // -------------------------------------------------------------------------------------
@@ -466,10 +468,18 @@ void BufferManager::readPageSync(u64 pid, u8* destination)
 {
    assert(u64(destination) % 512 == 0);
    s64 bytes_left = PAGE_SIZE;
+   // Time the blocking read: mean::task::read suspends this coroutine until the page
+   // arrives, so the TSC delta is exactly the wall-clock I/O wait this op paid for the
+   // miss (the worker thread runs other tasks meanwhile). Attributed to the coroutine
+   // Task so it is correct across worker-thread migration.
+   const auto io_t0 = mean::readTSC();
    mean::task::read(reinterpret_cast<char*>(destination), pid * PAGE_SIZE, bytes_left);
+   mean::task::this_task().io_wait_ns += mean::tscDifferenceNs(mean::readTSC(), io_t0);
    // const int bytes_read = pread(ssd_fd, destination, bytes_left, pid * PAGE_SIZE + (PAGE_SIZE - bytes_left));
    // -------------------------------------------------------------------------------------
    WorkerCounters::myCounters().read_operations_counter++;
+   // Coroutine-local per-lookup read counter (migration-safe), for I/O-per-op profiling.
+   mean::task::this_task().io_count++;
 }
 // -------------------------------------------------------------------------------------
 void BufferManager::fDataSync()

@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cstring>
 #include "Units.hpp"
 #include "leanstore/storage/btree/BTreeLL.hpp"
 // -------------------------------------------------------------------------------------
@@ -45,8 +47,13 @@ struct BTreeVSAdapter : BTreeInterface<Key, Payload> {
    bool lookup(Key k, Payload& v) override
    {
       u8 key_bytes[sizeof(Key)];
-      return btree.lookup(key_bytes, fold(key_bytes, k), [&](const u8* payload, u16 payload_length) { memcpy(&v.value, payload, payload_length); }) ==
-            OP_RESULT::OK;
+      // The callback runs on an optimistically read leaf, before the version recheck: a
+      // concurrent insert/split can hand it a torn payload_length (seen as a segfault in
+      // ycsb-d at v=1024, memcpy running off the task stack). Clamp it; the recheck then
+      // restarts the lookup, so a valid read still copies the whole value.
+      return btree.lookup(key_bytes, fold(key_bytes, k), [&](const u8* payload, u16 payload_length) {
+                memcpy(&v.value, payload, std::min<size_t>(payload_length, sizeof(v.value)));
+             }) == OP_RESULT::OK;
    }
    void insert(Key k, Payload& v) override
    {

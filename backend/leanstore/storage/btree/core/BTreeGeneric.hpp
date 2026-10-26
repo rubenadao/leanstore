@@ -3,6 +3,8 @@
 #include "BTreeIteratorInterface.hpp"
 #include "BTreeNode.hpp"
 #include "leanstore/Config.hpp"
+#include "leanstore/concurrency/Mean.hpp"
+#include "leanstore/concurrency/Task.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
 #include "leanstore/storage/buffer-manager/BufferManager.hpp"
 #include "leanstore/storage/buffer-manager/DTRegistry.hpp"
@@ -48,7 +50,7 @@ class BTreeGeneric
    // -------------------------------------------------------------------------------------
    bool tryMerge(BufferFrame& to_split, bool swizzle_sibling = true);
    // -------------------------------------------------------------------------------------
-   void trySplit(BufferFrame& to_split, s16 pos = -1);
+   void trySplit(BufferFrame& to_split, s16 pos = -1, const u8* insert_key = nullptr, u16 insert_key_length = 0);
    s16 mergeLeftIntoRight(ExclusivePageGuard<BTreeNode>& parent,
                           s16 left_pos,
                           ExclusivePageGuard<BTreeNode>& from_left,
@@ -161,9 +163,13 @@ class BTreeGeneric
             } else {
                target_guard.toShared();
             }
+            // Direct read/write contention on the leaf: the guard had to fall back (spin /
+            // shared / exclusive) because the leaf was exclusively latched.
+            if (target_guard.hasFacedContention())
+               mean::task::this_task().leaf_contention++;
             jumpmu_return;
          }
-         jumpmuCatch() { BACKOFF_STRATEGIES() }
+         jumpmuCatch() { BACKOFF_STRATEGIES() mean::task::this_task().restart_count++; }
       }
    }
    // -------------------------------------------------------------------------------------

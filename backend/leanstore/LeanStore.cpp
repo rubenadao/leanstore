@@ -112,10 +112,11 @@ void LeanStore::printObjStats() {
 // -------------------------------------------------------------------------------------
 void LeanStore::startProfilingThread()
 {
+   profiling_keep_running = true;
    std::thread profiling_thread([&]() {
       cpu_set_t cpuset;
       CPU_ZERO(&cpuset);
-      CPU_SET(63, &cpuset);
+      CPU_SET(std::thread::hardware_concurrency() - 1, &cpuset);
       auto thread = pthread_self();
       int s = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
       if (s != 0) {
@@ -165,7 +166,7 @@ void LeanStore::startProfilingThread()
       u64 seconds = 0;
       auto lastTime = mean::getTimePoint();
       auto lastTimePrint = mean::getTimePoint();
-      while (bg_threads_keep_running) {
+      while (bg_threads_keep_running && profiling_keep_running) {
          for (u64 t_i = 0; t_i < tables.size(); t_i++) {
             tables[t_i]->next();
             if (tables[t_i]->size() == 0)
@@ -238,16 +239,35 @@ void LeanStore::startProfilingThread()
             }
          }
          auto now = mean::getTimePoint();
-         auto diff = mean::timePointDifferenceUs(now, lastTime);
-         std::this_thread::sleep_for(std::chrono::microseconds(1000*1000 - diff));
+         auto diff = mean::timePointDifferenceUs(now, lastTime);  // uint64_t
+         // Guard the subtraction: if an iteration overran the 1s period (easy under heavy
+         // I/O load), 1e6 - diff would underflow to a ~hundreds-of-millennia sleep, which
+         // wedges stopProfilingThread() while it waits for this thread to exit. Skip the
+         // sleep instead so the loop promptly re-checks profiling_keep_running.
+         const u64 period_us = 1000 * 1000;
+         if (diff < period_us) {
+            std::this_thread::sleep_for(std::chrono::microseconds(period_us - diff));
+         }
          seconds += 1;
          std::locale::global(std::locale::classic());
          lastTime = mean::getTimePoint();
       }
       bg_threads_counter--;
+      profiling_threads_counter--;
    });
    bg_threads_counter++;
+   profiling_threads_counter++;
    profiling_thread.detach();
+}
+// -------------------------------------------------------------------------------------
+void LeanStore::stopProfilingThread()
+{
+   profiling_keep_running = false;
+   // The profiling thread wakes at most once per ~1s period; poll gently rather than
+   // burning a core spinning while we wait for it to observe the flag and exit.
+   while (profiling_threads_counter) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+   }
 }
 // -------------------------------------------------------------------------------------
 storage::btree::BTreeLL& LeanStore::registerBTreeLL(string name, string short_name)

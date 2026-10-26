@@ -26,7 +26,7 @@
 #link_directories(${Boost_LIBRARY})
 
 # sudo apt install libboost-context-dev
-set(Boost_USE_STATIC_LIBS   ON)
+set(Boost_USE_STATIC_LIBS   OFF)
 find_package(Boost REQUIRED COMPONENTS context )
 
 if (${Boost_FOUND})

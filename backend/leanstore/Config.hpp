@@ -55,6 +55,7 @@ DECLARE_double(d);
 // -------------------------------------------------------------------------------------
 DECLARE_bool(bstar);
 DECLARE_bool(bulk_insert);
+DECLARE_bool(append_split);
 // -------------------------------------------------------------------------------------
 DECLARE_int64(trace_dt_id);
 DECLARE_int64(trace_trigger_probability);

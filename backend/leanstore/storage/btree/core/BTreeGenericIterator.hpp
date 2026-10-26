@@ -197,7 +197,8 @@ class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MO
             leaf.unlock();
             cur = -1;
             // -------------------------------------------------------------------------------------
-            btree.trySplit(*bf);
+            // The key lets --append_split place the split where this insert lands.
+            btree.trySplit(*bf, -1, key.data(), key.length());
             jumpmu_break;
          }
          jumpmuCatch() { BACKOFF_STRATEGIES(); } // needed in nopp config, to prevent infinite looping, if there are no free pages
